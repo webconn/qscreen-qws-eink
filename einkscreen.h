@@ -21,7 +21,7 @@ public:
     void setMode(int nw, int nh, int nd);
 
 private:
-    bool _openFramebuffer(const QString& filename, int *fb, unsigned char **buffer);
+    bool _openFramebuffer(const QString& filename, int *fb, unsigned char **buffer, unsigned char **prebuffer);
     unsigned int _fbShift(int x, int y);
     void _fillPoint(unsigned char colorSpec, int x, int y);
 
@@ -30,7 +30,7 @@ private:
 
 protected:
     int d_fd, i_fd;
-    unsigned char *d_buffer, *i_buffer;
+    unsigned char *d_buffer, *i_buffer, *d_prebuffer, *i_prebuffer;
     size_t buffer_len;
 };
 

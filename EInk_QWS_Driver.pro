@@ -12,6 +12,8 @@ TARGET = einkscreen
 target.path += $$[QT_INSTALL_PLUGINS]/gfxdrivers
 INSTALLS += target
 
+#QT -= gui network
+
 DEFINES += EINK_QWS_DRIVER_LIBRARY
 
 # The following define makes your compiler emit warnings if you use

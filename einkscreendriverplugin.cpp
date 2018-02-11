@@ -1,7 +1,9 @@
 #include "einkscreen.h"
 #include <QScreenDriverPlugin>
 
-#define KEY "eink"
+#define KEY "einkscreen"
+
+QT_BEGIN_NAMESPACE
 
 class QEInkScreenDriverPlugin : public QScreenDriverPlugin
 {
@@ -26,4 +28,6 @@ QStringList QEInkScreenDriverPlugin::keys() const
     return QStringList() << KEY;
 }
 
-Q_EXPORT_PLUGIN2(eink, QEInkScreenDriverPlugin)
+Q_EXPORT_PLUGIN2(einkscreen, QEInkScreenDriverPlugin)
+
+QT_END_NAMESPACE

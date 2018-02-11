@@ -25,6 +25,7 @@
 #endif
 
 #define FB_SCREEN_REDRAW 0x46d1
+#define FB_SCREEN_REDRAW_WAIT 0x46e2
 
 QT_BEGIN_NAMESPACE
 
@@ -34,6 +35,8 @@ QEInkScreen::QEInkScreen(int displayId)
     , d_fd(-1), i_fd(-1)
     , d_buffer((unsigned char *) MAP_FAILED)
     , i_buffer((unsigned char *) MAP_FAILED)
+    , d_prebuffer(NULL)
+    , i_prebuffer(NULL)
 {
 
 }
@@ -114,7 +117,11 @@ bool QEInkScreen::initDevice()
     return true;
 }
 
-bool QEInkScreen::_openFramebuffer(const QString &filename, int *fd, unsigned char **buffer)
+void QEInkScreen::shutdownDevice()
+{
+}
+
+bool QEInkScreen::_openFramebuffer(const QString &filename, int *fd, unsigned char **buffer, unsigned char **prebuffer)
 {
     /* open framebuffer file */
     *fd = open(filename.toLatin1().constData(), O_RDWR);
@@ -151,7 +158,7 @@ bool QEInkScreen::_openFramebuffer(const QString &filename, int *fd, unsigned ch
 
         lstep = finfo.line_length;
         if (!lstep) {
-            lstep = w * 8 / d; // 8 bits in byte, sometimes pixels are smaller than 1 byte
+            lstep = w * d / 8; // 8 bits in byte, sometimes pixels are smaller than 1 byte
         }
 
         physWidth = vinfo.width;
@@ -170,6 +177,13 @@ bool QEInkScreen::_openFramebuffer(const QString &filename, int *fd, unsigned ch
         return false;
     }
 
+    *prebuffer = (unsigned char *) malloc(buffer_len);
+    if (!*prebuffer) {
+        perror("QEInkScreen::connect");
+        qCritical("Error allocating prebuffer");
+        return false;
+    }
+
     return true;
 }
 
@@ -181,6 +195,16 @@ void QEInkScreen::disconnect()
 
     if (i_buffer != MAP_FAILED) {
         munmap((char *) i_buffer, buffer_len);
+    }
+
+    if (d_prebuffer) {
+        free(d_prebuffer);
+        d_prebuffer = NULL;
+    }
+
+    if (i_prebuffer) {
+        free(i_prebuffer);
+        i_prebuffer = NULL;
     }
 
     close(d_fd);
@@ -200,23 +224,32 @@ unsigned int QEInkScreen::_fbShift(int x, int y)
 
 void QEInkScreen::_fillPoint(unsigned char colorSpec, int x, int y)
 {
+    //qDebug() << "FillPoint()" << x << y;
+
     unsigned int ad = _fbShift(x, y);
-    unsigned char c = d_buffer[ad];
+    unsigned char c = d_prebuffer[ad];
 
     if (x & 1) {
         c &= 0xf0;
         c |= colorSpec & 0xf;
     } else {
         c &= 0x0f;
-        c |= (colorSpec << 4) & 0xf;
+        c |= (colorSpec << 4) & 0xf0;
     }
 
-    d_buffer[ad] = c;
-    i_buffer[ad] = (~c) & 0xff;
+    //qDebug() << "d_buffer: " << d_buffer;
+    //qDebug() << "i_buffer: " << i_buffer;
+    //qDebug() << "ad: " << ad << " / " << buffer_len;
+    //qDebug() << "lstep: " << lstep;
+
+    d_prebuffer[ad] = c;
+    i_prebuffer[ad] = (~c) & 0xff;
 }
 
 void QEInkScreen::solidFill(const QColor &color, const QRegion &region)
 {
+    //qDebug() << "QEInkDisplay::solidFill " << color << region;
+
     unsigned char colorSpec = qGray(color.rgb()) / 16;
 
     /* let's just scan region and print specific pixels */
@@ -235,15 +268,20 @@ void QEInkScreen::solidFill(const QColor &color, const QRegion &region)
 
 void QEInkScreen::blit(const QImage &image, const QPoint &topLeft, const QRegion &region)
 {
+    //qDebug() << "QEInkDisplay::blit " << image.size() << region << topLeft;
     /* let's just scan region and print specific pixels */
     int x, y;
     int x1, y1, x2, y2;
     region.boundingRect().getCoords(&x1, &y1, &x2, &y2);
 
+    if (QPoint(x1, y1) != topLeft) {
+        qDebug() << "Initial points  differ: " << QPoint(x1, y1) << ", " << topLeft;
+    }
+
     for (y = y1; y < y2; y++) {
         for (x = x1; x < x2; x++) {
             if (region.contains(QPoint(x, y))) {
-                unsigned char colorSpec = qGray(image.pixel(x, y)) / 16;
+                unsigned char colorSpec = qGray(image.pixel(x - x1, y - y1)) / 16;
                 _fillPoint(colorSpec, x - x1 + topLeft.x(), y - y1 + topLeft.y());
             }
         }
@@ -255,7 +293,14 @@ void QEInkScreen::exposeRegion(QRegion region, int changing)
     /* expose it as is and push update event to framebuffer */
     QScreen::exposeRegion(region, changing);
 
+    memcpy(d_buffer, d_prebuffer, buffer_len);
+    memcpy(i_buffer, i_prebuffer, buffer_len);
+
     ioctl(d_fd, FB_SCREEN_REDRAW, 0);
+
+    qDebug() << "Wait for redraw";
+    while (ioctl(d_fd, FB_SCREEN_REDRAW_WAIT, 0) > 0);
+    qDebug() << "Redraw completed";
 }
 
 /* this is stolen from QLinuxFbScreen with hope that this will not break everything */
