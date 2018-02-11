@@ -1,5 +1,7 @@
 #include "einkscreen.h"
 
+#include <QDebug>
+
 #ifndef QT_NO_QWS_LINUXFB
 //#include "qmemorymanager_qws.h"
 #include "qwsdisplay_qws.h"
@@ -62,13 +64,42 @@ bool QEInkScreen::connect(const QString &displaySpec)
     }
 
     w = h = 0;
-    if (!_openFramebuffer(ddev, &d_fd, &d_buffer)) {
+    if (!_openFramebuffer(ddev, &d_fd, &d_buffer, &d_prebuffer)) {
         return false;
     }
 
-    if (!_openFramebuffer(idev, &i_fd, &i_buffer)) {
+    if (!_openFramebuffer(idev, &i_fd, &i_buffer, &i_prebuffer)) {
         return false;
     }
+
+    QRegExp mmWidthRx(QLatin1String("mmWidth=?(\\d+)"));
+        int dimIdxW = args.indexOf(mmWidthRx);
+        QRegExp mmHeightRx(QLatin1String("mmHeight=?(\\d+)"));
+        int dimIdxH = args.indexOf(mmHeightRx);
+        if (dimIdxW >= 0) {
+            mmWidthRx.exactMatch(args.at(dimIdxW));
+            physWidth = mmWidthRx.cap(1).toInt();
+            if (dimIdxH < 0)
+                physHeight = dh*physWidth/dw;
+        }
+        if (dimIdxH >= 0) {
+            mmHeightRx.exactMatch(args.at(dimIdxH));
+            physHeight = mmHeightRx.cap(1).toInt();
+            if (dimIdxW < 0)
+                physWidth = dw*physHeight/dh;
+        }
+        if (dimIdxW < 0 && dimIdxH < 0) {
+            if (w != 0 && h != 0) {
+                physWidth = w;
+                physHeight = h;
+            } else {
+                const int dpi = 72;
+                physWidth = qRound(dw * 25.4 / dpi);
+                physHeight = qRound(dh * 25.4 / dpi);
+            }
+        }
+
+    qDebug() << "QEInkScreen::connect - success";
 
     return true;
 }
